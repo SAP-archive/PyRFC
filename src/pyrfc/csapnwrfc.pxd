@@ -156,21 +156,21 @@ cdef extern from "sapnwrfc.h":
     ctypedef void *RFC_METADATA_QUERY_RESULT_HANDLE
     ctypedef void *RFC_THROUGHPUT_HANDLE
     ctypedef void *RFC_SERVER_HANDLE
-    ctypedef RFC_RC (*RFC_SERVER_FUNCTION)    (RFC_CONNECTION_HANDLE, RFC_FUNCTION_HANDLE, RFC_ERROR_INFO *) except * with gil
-    ctypedef RFC_RC (*RFC_FUNC_DESC_CALLBACK) (SAP_UC *, RFC_ATTRIBUTES, RFC_FUNCTION_DESC_HANDLE *) except * with gil
+    ctypedef RFC_RC (__stdcall *RFC_SERVER_FUNCTION)    (RFC_CONNECTION_HANDLE, RFC_FUNCTION_HANDLE, RFC_ERROR_INFO *) except * with gil
+    ctypedef RFC_RC (__stdcall *RFC_FUNC_DESC_CALLBACK) (SAP_UC *, RFC_ATTRIBUTES, RFC_FUNCTION_DESC_HANDLE *) except * with gil
     # authorization handler
-    ctypedef RFC_RC (*RFC_ON_AUTHORIZATION_CHECK) (RFC_CONNECTION_HANDLE, RFC_SECURITY_ATTRIBUTES *, RFC_ERROR_INFO *) except * with gil
+    ctypedef RFC_RC (__stdcall *RFC_ON_AUTHORIZATION_CHECK) (RFC_CONNECTION_HANDLE, RFC_SECURITY_ATTRIBUTES *, RFC_ERROR_INFO *) except * with gil
     # bgrfc handlers
-    ctypedef RFC_RC (*RFC_ON_CHECK_UNIT)     (RFC_CONNECTION_HANDLE, RFC_UNIT_IDENTIFIER *) except * with gil
-    ctypedef RFC_RC (*RFC_ON_COMMIT_UNIT)    (RFC_CONNECTION_HANDLE, RFC_UNIT_IDENTIFIER *) except * with gil
-    ctypedef RFC_RC (*RFC_ON_ROLLBACK_UNIT)  (RFC_CONNECTION_HANDLE, RFC_UNIT_IDENTIFIER *) except * with gil
-    ctypedef RFC_RC (*RFC_ON_CONFIRM_UNIT)   (RFC_CONNECTION_HANDLE, RFC_UNIT_IDENTIFIER *) except * with gil
-    ctypedef RFC_RC (*RFC_ON_GET_UNIT_STATE) (RFC_CONNECTION_HANDLE, RFC_UNIT_IDENTIFIER*, RFC_UNIT_STATE*) except * with gil
+    ctypedef RFC_RC (__stdcall *RFC_ON_CHECK_UNIT)     (RFC_CONNECTION_HANDLE, RFC_UNIT_IDENTIFIER *) except * with gil
+    ctypedef RFC_RC (__stdcall *RFC_ON_COMMIT_UNIT)    (RFC_CONNECTION_HANDLE, RFC_UNIT_IDENTIFIER *) except * with gil
+    ctypedef RFC_RC (__stdcall *RFC_ON_ROLLBACK_UNIT)  (RFC_CONNECTION_HANDLE, RFC_UNIT_IDENTIFIER *) except * with gil
+    ctypedef RFC_RC (__stdcall *RFC_ON_CONFIRM_UNIT)   (RFC_CONNECTION_HANDLE, RFC_UNIT_IDENTIFIER *) except * with gil
+    ctypedef RFC_RC (__stdcall *RFC_ON_GET_UNIT_STATE) (RFC_CONNECTION_HANDLE, RFC_UNIT_IDENTIFIER*, RFC_UNIT_STATE*) except * with gil
     # transaction handlers
-    ctypedef RFC_RC (*RFC_ON_CHECK_TRANSACTION) (RFC_CONNECTION_HANDLE, SAP_UC *) except * with gil
-    ctypedef RFC_RC (*RFC_ON_COMMIT_TRANSACTION) (RFC_CONNECTION_HANDLE, SAP_UC *) except * with gil
-    ctypedef RFC_RC (*RFC_ON_ROLLBACK_TRANSACTION) (RFC_CONNECTION_HANDLE, SAP_UC *) except * with gil
-    ctypedef RFC_RC (*RFC_ON_CONFIRM_TRANSACTION) (RFC_CONNECTION_HANDLE, SAP_UC *) except * with gil
+    ctypedef RFC_RC (__stdcall *RFC_ON_CHECK_TRANSACTION) (RFC_CONNECTION_HANDLE, SAP_UC *) except * with gil
+    ctypedef RFC_RC (__stdcall *RFC_ON_COMMIT_TRANSACTION) (RFC_CONNECTION_HANDLE, SAP_UC *) except * with gil
+    ctypedef RFC_RC (__stdcall *RFC_ON_ROLLBACK_TRANSACTION) (RFC_CONNECTION_HANDLE, SAP_UC *) except * with gil
+    ctypedef RFC_RC (__stdcall *RFC_ON_CONFIRM_TRANSACTION) (RFC_CONNECTION_HANDLE, SAP_UC *) except * with gil
 
     ctypedef struct RFC_CONNECTION_PARAMETER:
         SAP_UC *name

@@ -1530,7 +1530,7 @@ def _server_log(origin, log_message, *args):
             print (f"[{datetime.utcnow()} UTC] {origin} '{log_message}'", *args)
 
 
-cdef RFC_RC metadataLookup(
+cdef RFC_RC __stdcall metadataLookup(
             const SAP_UC* functionName,
             RFC_ATTRIBUTES rfcAttributes,
             RFC_FUNCTION_DESC_HANDLE *funcDescHandle
@@ -1574,7 +1574,7 @@ cdef get_server_context(RFC_CONNECTION_HANDLE rfcHandle, RFC_ERROR_INFO* serverE
         _server_log(origin, "error", ex)
         return None
 
-cdef RFC_RC genericHandler(RFC_CONNECTION_HANDLE rfcHandle, RFC_FUNCTION_HANDLE funcHandle, RFC_ERROR_INFO* serverErrorInfo) noexcept with gil:
+cdef RFC_RC __stdcall genericHandler(RFC_CONNECTION_HANDLE rfcHandle, RFC_FUNCTION_HANDLE funcHandle, RFC_ERROR_INFO* serverErrorInfo) noexcept with gil:
     cdef RFC_RC rc
     cdef RFC_ERROR_INFO errorInfo
     cdef RFC_ATTRIBUTES attributes
@@ -1869,39 +1869,13 @@ cdef class Server:
         with nogil:
             self._server_handle = RfcCreateServer(self._server_handle_params._params, self._server_handle_params._params_count, &errorInfo)
         if errorInfo.code == RFC_OK and callable(server_context["authorization_check"]):
-            RfcInstallAuthorizationCheckHandler(Server.__onAuthorizationCheck, &errorInfo)
+            RfcInstallAuthorizationCheckHandler(__onAuthorizationCheck, &errorInfo)
         if errorInfo.code != RFC_OK:
             self._server_handle = NULL
             raise wrapError(&errorInfo)
         _server_log("Server", f"{self.server_handle} created")
 
-    #
-    # authorization check handler
-    #
 
-    @staticmethod
-    cdef RFC_RC __onAuthorizationCheck(RFC_CONNECTION_HANDLE rfcHandle, RFC_SECURITY_ATTRIBUTES *secAttributes, RFC_ERROR_INFO *errorInfo) with gil:
-        origin = "onAuthorizationCheck"
-        security_attributes = wrapSecurityAttributes(secAttributes)
-        functionName = security_attributes['functionName']
-        try:
-            check = server_context["authorization_check"](<uintptr_t>rfcHandle, security_attributes)
-            if check == RCStatus.OK:
-                # authorized
-                _server_log(origin, "Authorized", functionName)
-                return RFC_OK
-            # not authorized
-            message=f"No authorization for '{functionName}': {check}"
-            _server_log(origin, message)
-            error = ExternalRuntimeError(message=message, code=RFC_AUTHORIZATION_FAILURE)
-            fillError(error, errorInfo)
-            return RFC_AUTHORIZATION_FAILURE
-        except Exception as ex:
-            message=f"Authorization exception raised for '{functionName}': {ex}"
-            _server_log(origin, message)
-            error = ExternalRuntimeError(message=message, code=RFC_AUTHORIZATION_FAILURE)
-            fillError(new_error, errorInfo)
-            return RFC_AUTHORIZATION_FAILURE
     #
     # transaction protocol handlers defined as class methods, calling application handlers
     #
@@ -1912,26 +1886,6 @@ cdef class Server:
         "rollback": None,
         "confirm": None,
     }
-
-    @staticmethod
-    cdef RFC_RC __onCheckTransaction(RFC_CONNECTION_HANDLE rfcHandle, const SAP_UC *tid) with gil:
-        origin = "onCheckTransaction"
-        Server.__trfc_handler(origin, Server.__transactionHandler["check"], rfcHandle, tid)
-
-    @staticmethod
-    cdef RFC_RC __onCommitTransaction(RFC_CONNECTION_HANDLE rfcHandle, const SAP_UC *tid) with gil:
-        origin = "onCommitTransaction"
-        Server.__trfc_handler(origin, Server.__transactionHandler["commit"], rfcHandle, tid)
-
-    @staticmethod
-    cdef RFC_RC __onRollbackTransaction(RFC_CONNECTION_HANDLE rfcHandle, const SAP_UC *tid) with gil:
-        origin = "onRollbackTransaction"
-        Server.__trfc_handler(origin, Server.__transactionHandler["rollback"], rfcHandle, tid)
-
-    @staticmethod
-    cdef RFC_RC __onConfirmTransaction(RFC_CONNECTION_HANDLE rfcHandle, const SAP_UC *tid) with gil:
-        origin = "onConfirmTransaction"
-        Server.__trfc_handler(origin, Server.__transactionHandler["confirm"], rfcHandle, tid)
 
     @staticmethod
     cdef RFC_RC __trfc_handler(origin, handler, RFC_CONNECTION_HANDLE rfcHandle, const SAP_UC *tid) with gil:
@@ -1991,27 +1945,6 @@ cdef class Server:
         "getState": None
     }
 
-    @staticmethod
-    cdef RFC_RC __onCheckFunction(RFC_CONNECTION_HANDLE rfcHandle, const RFC_UNIT_IDENTIFIER *identifier) with gil:
-        origin = "onCheckFunction"
-        Server.__bgrfc_handler(origin, Server.__bgRfcHandler["check"], rfcHandle, identifier)
-
-    @staticmethod
-    cdef RFC_RC __onCommitFunction(RFC_CONNECTION_HANDLE rfcHandle, const RFC_UNIT_IDENTIFIER *identifier) with gil:
-        origin = "onCommitFunction"
-        Server.__bgrfc_handler(origin, Server.__bgRfcHandler["commit"], rfcHandle, identifier)
-
-    @staticmethod
-    cdef RFC_RC __onRollbackFunction(RFC_CONNECTION_HANDLE rfcHandle, const RFC_UNIT_IDENTIFIER *identifier) with gil:
-        origin = "onRollbackFunction"
-        Server.__bgrfc_handler(origin, Server.__bgRfcHandler["rollback"], rfcHandle, identifier)
-
-    @staticmethod
-    cdef RFC_RC __onConfirmFunction(RFC_CONNECTION_HANDLE rfcHandle, const RFC_UNIT_IDENTIFIER *identifier) with gil:
-        origin = "onConfirmFunction"
-        Server.__bgrfc_handler(origin, Server.__bgRfcHandler["confirm"], rfcHandle, identifier)
-
-    @staticmethod
     cdef RFC_RC __bgrfc_handler(origin, handler, RFC_CONNECTION_HANDLE rfcHandle, const RFC_UNIT_IDENTIFIER *identifier) with gil:
         if not callable(handler):
             _server_log(origin, "not registered for server connection handle '{<uintptr_t>rfcHandle}'")
@@ -2021,36 +1954,6 @@ cdef class Server:
             return handler(<uintptr_t>rfcHandle, unit_identifier).value
         except Exception as ex:
             _server_log(origin, "error:", ex)
-            return RFC_EXTERNAL_FAILURE
-
-    @staticmethod
-    cdef RFC_RC __onGetStateFunction(
-                RFC_CONNECTION_HANDLE rfcHandle,
-                const RFC_UNIT_IDENTIFIER *identifier,
-                RFC_UNIT_STATE *unitState
-            ) with gil:
-        origin = "onGetStateFunction"
-        handler = Server.__bgRfcHandler["getState"]
-        if not callable(handler):
-            _server_log(origin, "not registered for server connection handle '{<uintptr_t>rfcHandle}'")
-            return RFC_EXTERNAL_FAILURE
-        try:
-            unit_identifier = wrapUnitIdentifier(identifier[0])
-            state = handler(<uintptr_t>rfcHandle, unit_identifier)
-            # section 5.6.3 pg 84 of SAP NWRFC SDK Programming Guide 7.50
-            if state == UnitState.created or state == UnitState.executed:
-                unitState[0] = RFC_UNIT_IN_PROCESS
-            elif state == UnitState.committed:
-                idunitStateentifier[0] = RFC_UNIT_COMMITTED
-            elif state == UnitState.rolled_back:
-                unitState[0] = RFC_UNIT_ROLLED_BACK
-            elif state == UnitState.confirmed:
-                unitState[0] = RFC_UNIT_CONFIRMED
-            else:
-                raise Exception(f"TID {unit_identifier['id']} invalid state '{state}'")
-            return RFC_OK
-        except Exception as ex:
-            _server_log(origin, "error:\n", ex)
             return RFC_EXTERNAL_FAILURE
 
     def bgrfc_init(self, sysId=None, bgRfcHandler=None):
@@ -2093,11 +1996,11 @@ cdef class Server:
         cdef RFC_ERROR_INFO errorInfo
         cdef RFC_RC rc = RfcInstallBgRfcHandlers(
                             ucSysId,
-                            Server.__onCheckFunction,
-                            Server.__onCommitFunction,
-                            Server.__onRollbackFunction,
-                            Server.__onConfirmFunction,
-                            Server.__onGetStateFunction,
+                            __onCheckFunction,
+                            __onCommitFunction,
+                            __onRollbackFunction,
+                            __onConfirmFunction,
+                            __onGetStateFunction,
                             &errorInfo
                         )
         free(ucSysId)
@@ -2113,10 +2016,10 @@ cdef class Server:
         cdef RFC_ERROR_INFO errorInfo
         cdef RFC_RC rc = RfcInstallTransactionHandlers(
                             ucSysId,
-                            Server.__onCheckTransaction,
-                            Server.__onCommitTransaction,
-                            Server.__onRollbackTransaction,
-                            Server.__onConfirmTransaction,
+                            __onCheckTransaction,
+                            __onCommitTransaction,
+                            __onRollbackTransaction,
+                            __onConfirmTransaction,
                             &errorInfo
                         )
         free(ucSysId)
@@ -3376,3 +3279,91 @@ cdef wrapString(SAP_UC* uc, uclen=-1, rstrip=True):
         return utf8[:result_len].decode()
     finally:
         free(utf8)
+
+#
+# authorization check handler
+#
+
+cdef RFC_RC __stdcall __onAuthorizationCheck(RFC_CONNECTION_HANDLE rfcHandle, RFC_SECURITY_ATTRIBUTES *secAttributes, RFC_ERROR_INFO *errorInfo) with gil:
+    origin = "onAuthorizationCheck"
+    security_attributes = wrapSecurityAttributes(secAttributes)
+    functionName = security_attributes['functionName']
+    try:
+        check = server_context["authorization_check"](<uintptr_t>rfcHandle, security_attributes)
+        if check == RCStatus.OK:
+            # authorized
+            _server_log(origin, "Authorized", functionName)
+            return RFC_OK
+        # not authorized
+        message=f"No authorization for '{functionName}': {check}"
+        _server_log(origin, message)
+        error = ExternalRuntimeError(message=message, code=RFC_AUTHORIZATION_FAILURE)
+        fillError(error, errorInfo)
+        return RFC_AUTHORIZATION_FAILURE
+    except Exception as ex:
+        message=f"Authorization exception raised for '{functionName}': {ex}"
+        _server_log(origin, message)
+        error = ExternalRuntimeError(message=message, code=RFC_AUTHORIZATION_FAILURE)
+        fillError(new_error, errorInfo)
+        return RFC_AUTHORIZATION_FAILURE
+
+cdef RFC_RC __stdcall __onCheckTransaction(RFC_CONNECTION_HANDLE rfcHandle, const SAP_UC *tid) with gil:
+    origin = "onCheckTransaction"
+    Server.__trfc_handler(origin, Server.__transactionHandler["check"], rfcHandle, tid)
+
+cdef RFC_RC __stdcall __onCommitTransaction(RFC_CONNECTION_HANDLE rfcHandle, const SAP_UC *tid) with gil:
+    origin = "onCommitTransaction"
+    Server.__trfc_handler(origin, Server.__transactionHandler["commit"], rfcHandle, tid)
+
+cdef RFC_RC __stdcall __onRollbackTransaction(RFC_CONNECTION_HANDLE rfcHandle, const SAP_UC *tid) with gil:
+    origin = "onRollbackTransaction"
+    Server.__trfc_handler(origin, Server.__transactionHandler["rollback"], rfcHandle, tid)
+
+cdef RFC_RC __stdcall __onConfirmTransaction(RFC_CONNECTION_HANDLE rfcHandle, const SAP_UC *tid) with gil:
+    origin = "onConfirmTransaction"
+    Server.__trfc_handler(origin, Server.__transactionHandler["confirm"], rfcHandle, tid)
+
+cdef RFC_RC __stdcall __onCheckFunction(RFC_CONNECTION_HANDLE rfcHandle, const RFC_UNIT_IDENTIFIER *identifier) with gil:
+    origin = "onCheckFunction"
+    Server.__bgrfc_handler(origin, Server.__bgRfcHandler["check"], rfcHandle, identifier)
+
+cdef RFC_RC __stdcall __onCommitFunction(RFC_CONNECTION_HANDLE rfcHandle, const RFC_UNIT_IDENTIFIER *identifier) with gil:
+    origin = "onCommitFunction"
+    Server.__bgrfc_handler(origin, Server.__bgRfcHandler["commit"], rfcHandle, identifier)
+
+cdef RFC_RC __stdcall __onRollbackFunction(RFC_CONNECTION_HANDLE rfcHandle, const RFC_UNIT_IDENTIFIER *identifier) with gil:
+    origin = "onRollbackFunction"
+    Server.__bgrfc_handler(origin, Server.__bgRfcHandler["rollback"], rfcHandle, identifier)
+
+cdef RFC_RC __stdcall __onConfirmFunction(RFC_CONNECTION_HANDLE rfcHandle, const RFC_UNIT_IDENTIFIER *identifier) with gil:
+    origin = "onConfirmFunction"
+    Server.__bgrfc_handler(origin, Server.__bgRfcHandler["confirm"], rfcHandle, identifier)
+
+cdef RFC_RC __stdcall __onGetStateFunction(
+            RFC_CONNECTION_HANDLE rfcHandle,
+            const RFC_UNIT_IDENTIFIER *identifier,
+            RFC_UNIT_STATE *unitState
+        ) with gil:
+    origin = "onGetStateFunction"
+    handler = Server.__bgRfcHandler["getState"]
+    if not callable(handler):
+        _server_log(origin, "not registered for server connection handle '{<uintptr_t>rfcHandle}'")
+        return RFC_EXTERNAL_FAILURE
+    try:
+        unit_identifier = wrapUnitIdentifier(identifier[0])
+        state = handler(<uintptr_t>rfcHandle, unit_identifier)
+        # section 5.6.3 pg 84 of SAP NWRFC SDK Programming Guide 7.50
+        if state == UnitState.created or state == UnitState.executed:
+            unitState[0] = RFC_UNIT_IN_PROCESS
+        elif state == UnitState.committed:
+            idunitStateentifier[0] = RFC_UNIT_COMMITTED
+        elif state == UnitState.rolled_back:
+            unitState[0] = RFC_UNIT_ROLLED_BACK
+        elif state == UnitState.confirmed:
+            unitState[0] = RFC_UNIT_CONFIRMED
+        else:
+            raise Exception(f"TID {unit_identifier['id']} invalid state '{state}'")
+        return RFC_OK
+    except Exception as ex:
+        _server_log(origin, "error:\n", ex)
+        return RFC_EXTERNAL_FAILURE
